@@ -23,6 +23,9 @@ services:
       DATABASE_URL: postgresql+psycopg://ailab:ailab@postgres:5432/ailab
       REDIS_URL: redis://redis:6379/0
       SNAPSHOT_CADENCE: 500
+      WORKER_RETRY_MAX: ${WORKER_RETRY_MAX:-3}
+      WORKER_RETRY_INTERVALS: ${WORKER_RETRY_INTERVALS:-10,30,60}
+      SANDBOX_HEALTH_URL: ${SANDBOX_HEALTH_URL:-http://sandbox:8010/health}
       PYTHONPATH: /app/services/api:/app/packages/domain:/app/packages/policy
     depends_on:
       - postgres
@@ -30,7 +33,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../../artifacts:/workspace/artifacts
+      - workspace_data:/workspace
 
   worker:
     build:
@@ -45,11 +48,44 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LOCAL_OPENAI_BASE_URL: ${LOCAL_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       LOCAL_OPENAI_API_KEY: ${LOCAL_OPENAI_API_KEY:-ollama}
+      PLANNER_PROVIDER: ${PLANNER_PROVIDER:-local}
+      PLANNER_MODEL: ${PLANNER_MODEL:-llama3.1}
+      PLANNER_TEMPERATURE: ${PLANNER_TEMPERATURE:-0.2}
+      PLANNER_MAX_TOKENS: ${PLANNER_MAX_TOKENS:-300}
+      RESEARCHER_PROVIDER: ${RESEARCHER_PROVIDER:-local}
+      RESEARCHER_MODEL: ${RESEARCHER_MODEL:-llama3.1}
+      RESEARCHER_TEMPERATURE: ${RESEARCHER_TEMPERATURE:-0.2}
+      RESEARCHER_MAX_TOKENS: ${RESEARCHER_MAX_TOKENS:-200}
+      CRITIC_PROVIDER: ${CRITIC_PROVIDER:-local}
+      CRITIC_MODEL: ${CRITIC_MODEL:-llama3.1}
+      CRITIC_TEMPERATURE: ${CRITIC_TEMPERATURE:-0.2}
+      CRITIC_MAX_TOKENS: ${CRITIC_MAX_TOKENS:-200}
+      SANDBOX_API_URL: ${SANDBOX_API_URL:-http://sandbox:8010}
+      SANDBOX_REQUIRED: ${SANDBOX_REQUIRED:-true}
     depends_on:
       - api
       - redis
+      - sandbox
     volumes:
-      - ../../artifacts:/workspace/artifacts
+      - workspace_data:/workspace
+
+  sandbox:
+    build:
+      context: ../../
+      dockerfile: services/sandbox/Dockerfile
+    environment:
+      SANDBOX_DOCKER_SOCKET: unix://var/run/docker.sock
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-python:3.12-slim}
+      SANDBOX_USER: ${SANDBOX_USER:-65534:65534}
+      SANDBOX_WORKSPACE_VOLUME: ${SANDBOX_WORKSPACE_VOLUME:-ai_lab_workspace_data}
+      PYTHONPATH: /app/services/sandbox:/app/packages/policy
+    ports:
+      - "8010:8010"
+    volumes:
+      - workspace_data:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   postgres_data:
+  workspace_data:
+    name: ai_lab_workspace_data

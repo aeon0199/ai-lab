@@ -5,6 +5,8 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
+from ailab_domain.models import WorldStateModel
+
 
 WorldState = dict[str, Any]
 
@@ -100,4 +102,5 @@ def reduce_events(stream_id: str, events: Iterable[dict[str, Any]], seed_state: 
             payload=event["payload"],
             occurred_at=event.get("occurred_at"),
         )
-    return state
+    # Validate final reduced shape to prevent silent schema drift.
+    return WorldStateModel.model_validate(state).model_dump()

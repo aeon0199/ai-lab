@@ -7,6 +7,7 @@ AI Lab is an event-sourced autonomous research environment with a local-first de
 - Desktop: Electron + React + TypeScript
 - API: FastAPI + SQLAlchemy + PostgreSQL
 - Worker: Redis-backed RQ workers
+- Sandbox: FastAPI + ephemeral Docker tool execution
 - Storage: Event log as source of truth + projection tables
 - Deployment: Docker Compose (single VM/local)
 
@@ -15,6 +16,7 @@ AI Lab is an event-sourced autonomous research environment with a local-first de
 - `apps/desktop`: Electron desktop application
 - `services/api`: FastAPI command/query API and websocket streams
 - `services/worker`: Queue workers and autonomous agent loop
+- `services/sandbox`: Policy-enforced sandbox service for tool execution
 - `packages/domain`: Shared Python domain schemas and event definitions
 - `packages/policy`: Tool policy schemas and enforcement defaults
 - `infra/docker`: Compose and container assets
@@ -23,11 +25,11 @@ AI Lab is an event-sourced autonomous research environment with a local-first de
 
 ## Quick start
 
-### 1) Start infra and services (API + worker + Postgres + Redis)
+### 1) Start infra and services (API + worker + sandbox + Postgres + Redis)
 
 ```bash
 cd /Users/joshmalone/Code/projects/ai-lab
-docker-compose -f infra/docker/docker-compose.yml up --build
+docker compose -f infra/docker/docker-compose.yml up --build
 ```
 
 API is available at `http://localhost:8000`.
@@ -46,8 +48,8 @@ npm run dev
 cd /Users/joshmalone/Code/projects/ai-lab
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e packages/domain -e packages/policy -e services/api -e services/worker pytest
-pytest -q
+pip install -e packages/domain -e packages/policy -e services/api -e services/worker -e services/sandbox pytest
+python3 -m pytest -q
 ```
 
 ## Core principles implemented

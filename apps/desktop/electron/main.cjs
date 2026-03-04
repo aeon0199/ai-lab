@@ -5,7 +5,8 @@ const { spawn } = require("node:child_process");
 const isDev = !app.isPackaged;
 const repoRoot = path.resolve(__dirname, "../../..");
 const composeFile = path.join(repoRoot, "infra/docker/docker-compose.yml");
-const composeCommand = process.env.DOCKER_COMPOSE_CMD || "docker-compose";
+const composeCommand = process.env.DOCKER_COMPOSE_CMD || "docker";
+const composePrefix = composeCommand === "docker" ? ["compose"] : [];
 
 let mainWindow;
 
@@ -33,7 +34,7 @@ function createWindow() {
 
 function runCompose(args) {
   return new Promise((resolve, reject) => {
-    const cmd = spawn(composeCommand, ["-f", composeFile, ...args], {
+    const cmd = spawn(composeCommand, [...composePrefix, "-f", composeFile, ...args], {
       cwd: repoRoot,
       shell: false,
     });

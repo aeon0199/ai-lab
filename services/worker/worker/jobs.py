@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from ailab_domain.events import ActorType
+from rq import get_current_job
 
 from worker.agents.critic import CriticAgent
 from worker.agents.planner import PlannerAgent
@@ -322,15 +323,37 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
         return {"ok": True, "message": f"Run {run_id} finished"}
 
     except Exception as exc:
-        api_client.emit_event(
-            run_id,
-            "research_run_failed",
-            ActorType.SYSTEM,
-            "runtime",
-            {
-                "run_id": run_id,
-                "reason": str(exc),
-                "ended_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+        job = get_current_job()
+        retries_left = 0
+        if job and job.retries_left:
+            retries_left = int(job.retries_left)
+
+        if retries_left > 0:
+            api_client.emit_event(
+                run_id,
+                "analysis_generated",
+                ActorType.SYSTEM,
+                "runtime",
+                {
+                    "trace_id": str(uuid4()),
+                    "research_run_id": run_id,
+                    "agent_id": "runtime",
+                    "reasoning_summary": f"Transient failure: {exc}. Retries remaining: {retries_left}",
+                    "action": "retry_scheduled",
+                    "tool_used": None,
+                    "tokens_used": 0,
+                },
+            )
+        else:
+            api_client.emit_event(
+                run_id,
+                "research_run_failed",
+                ActorType.SYSTEM,
+                "runtime",
+                {
+                    "run_id": run_id,
+                    "reason": str(exc),
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
         raise

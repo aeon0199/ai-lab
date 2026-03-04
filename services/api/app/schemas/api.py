@@ -129,3 +129,5 @@ class HealthResponse(BaseModel):
     status: str
     db: str
     redis: str
+    worker: str
+    sandbox: str
