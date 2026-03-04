@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ailab
+      POSTGRES_USER: ailab
+      POSTGRES_PASSWORD: ailab
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ../../
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://ailab:ailab@postgres:5432/ailab
+      REDIS_URL: redis://redis:6379/0
+      SNAPSHOT_CADENCE: 500
+      PYTHONPATH: /app/services/api:/app/packages/domain:/app/packages/policy
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../artifacts:/workspace/artifacts
+
+  worker:
+    build:
+      context: ../../
+      dockerfile: services/worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      AILAB_API_BASE_URL: http://api:8000
+      PYTHONPATH: /app/services/worker:/app/packages/domain:/app/packages/policy
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LOCAL_OPENAI_BASE_URL: ${LOCAL_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
+      LOCAL_OPENAI_API_KEY: ${LOCAL_OPENAI_API_KEY:-ollama}
+    depends_on:
+      - api
+      - redis
+    volumes:
+      - ../../artifacts:/workspace/artifacts
+
+volumes:
+  postgres_data:
