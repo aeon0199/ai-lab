@@ -10,8 +10,13 @@ class Settings(BaseSettings):
     snapshot_cadence: int = 500
     max_experiments_per_run: int = 100
     max_tool_runtime_seconds: int = 300
-    worker_retry_max: int = 3
-    worker_retry_intervals: str = "10,30,60"
+    queue_backend: str = "dramatiq"
+    dramatiq_namespace: str = "ailab"
+    dramatiq_max_retries: int = 3
+    dramatiq_min_backoff_ms: int = 10_000
+    dramatiq_max_backoff_ms: int = 60_000
+    worker_heartbeat_key: str = "ailab:worker:heartbeat"
+    worker_heartbeat_ttl_seconds: int = 90
     sandbox_health_url: str | None = "http://sandbox:8010/health"
 
 

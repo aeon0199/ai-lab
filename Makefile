@@ -1,5 +1,5 @@
 .PHONY: up down api worker test desktop
-COMPOSE ?= docker-compose
+COMPOSE ?= docker compose
 
 up:
 	$(COMPOSE) -f infra/docker/docker-compose.yml up --build

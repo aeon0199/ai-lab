@@ -2,16 +2,41 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from ailab_domain.events import ActorType
-from rq import get_current_job
+
+try:
+    from dramatiq.middleware import CurrentMessage
+except Exception:  # pragma: no cover
+    CurrentMessage = None  # type: ignore[assignment]
 
 from worker.agents.critic import CriticAgent
 from worker.agents.planner import PlannerAgent
 from worker.agents.researcher import ResearcherAgent
 from worker.core.api_client import api_client
 from worker.core.config import settings
+from worker.core.run_lock import acquire_run_lock
+
+
+def _stable_uuid(*parts: object) -> str:
+    seed = ":".join(str(part) for part in parts)
+    return str(uuid5(NAMESPACE_URL, seed))
+
+
+def _event_key(
+    run_id: str,
+    event_type: str,
+    *,
+    cycle_index: int | None = None,
+    suffix: str | None = None,
+) -> str:
+    parts = ["run", run_id, event_type]
+    if cycle_index is not None:
+        parts.append(f"cycle-{cycle_index}")
+    if suffix:
+        parts.append(suffix)
+    return ":".join(parts)
 
 
 def _emit_trace(
@@ -19,16 +44,20 @@ def _emit_trace(
     agent_id: str,
     reasoning: str,
     action: str,
+    *,
+    cycle_index: int | None = None,
+    scope: str | None = None,
     tool_used: str | None = None,
     tokens_used: int = 0,
 ) -> None:
+    trace_scope = scope or action
     api_client.emit_event(
         run_id,
         "analysis_generated",
         ActorType.AGENT,
         agent_id,
         {
-            "trace_id": str(uuid4()),
+            "trace_id": _stable_uuid(run_id, "trace", agent_id, trace_scope, cycle_index or "run"),
             "research_run_id": run_id,
             "agent_id": agent_id,
             "reasoning_summary": reasoning,
@@ -36,6 +65,12 @@ def _emit_trace(
             "tool_used": tool_used,
             "tokens_used": tokens_used,
         },
+        idempotency_key=_event_key(
+            run_id,
+            "analysis_generated",
+            cycle_index=cycle_index,
+            suffix=f"{agent_id}:{trace_scope}",
+        ),
     )
 
 
@@ -52,6 +87,7 @@ def _spawn_agents(run_id: str, planner: PlannerAgent, researcher: ResearcherAgen
                 "capabilities": agent.capabilities,
                 "tool_access": agent.tool_access,
             },
+            idempotency_key=_event_key(run_id, "agent_spawned", suffix=agent.agent_id),
         )
 
 
@@ -81,6 +117,26 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
     default_max = min(budget_max, config_max)
     final_max = min(default_max, max_cycles) if max_cycles else default_max
 
+    run_lock = acquire_run_lock(run_id)
+    if run_lock is None:
+        api_client.emit_event(
+            run_id,
+            "analysis_generated",
+            ActorType.SYSTEM,
+            "runtime",
+            {
+                "trace_id": _stable_uuid(run_id, "trace", "runtime", "run_lock_contention"),
+                "research_run_id": run_id,
+                "agent_id": "runtime",
+                "reasoning_summary": "Skipped processing because another worker holds the run lock.",
+                "action": "run_lock_contention",
+                "tool_used": None,
+                "tokens_used": 0,
+            },
+            idempotency_key=_event_key(run_id, "analysis_generated", suffix="runtime:run_lock_contention"),
+        )
+        return {"ok": True, "message": f"Run {run_id} is currently locked by another worker"}
+
     try:
         for cycle_index in range(1, final_max + 1):
             fresh_run = api_client.get_run(run_id)
@@ -97,6 +153,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "cycle_index": cycle_index,
                     "agents": [planner.agent_id, researcher.agent_id, critic.agent_id],
                 },
+                idempotency_key=_event_key(run_id, "agent_cycle_started", cycle_index=cycle_index),
             )
 
             previous_scores = api_client.get_scores(run_id)
@@ -106,7 +163,15 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                 previous_scores,
                 cycle_index,
             )
-            _emit_trace(run_id, planner.agent_id, planner_reasoning, "propose_experiment", "model_inference")
+            experiment["experiment_id"] = _stable_uuid(run_id, "experiment", cycle_index)
+            _emit_trace(
+                run_id,
+                planner.agent_id,
+                planner_reasoning,
+                "propose_experiment",
+                cycle_index=cycle_index,
+                tool_used="model_inference",
+            )
 
             api_client.emit_event(
                 run_id,
@@ -114,6 +179,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                 ActorType.AGENT,
                 planner.agent_id,
                 experiment,
+                idempotency_key=_event_key(run_id, "experiment_proposed", cycle_index=cycle_index),
             )
 
             api_client.emit_event(
@@ -127,9 +193,10 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "approved": True,
                     "reason": "all required tools in registry with policy constraints",
                 },
+                idempotency_key=_event_key(run_id, "experiment_approved_by_policy", cycle_index=cycle_index),
             )
 
-            experiment_run_id = str(uuid4())
+            experiment_run_id = _stable_uuid(run_id, "experiment_run", cycle_index)
             api_client.emit_event(
                 run_id,
                 "experiment_run_queued",
@@ -141,6 +208,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "research_run_id": run_id,
                     "parameters": experiment.get("parameters", {}),
                 },
+                idempotency_key=_event_key(run_id, "experiment_run_queued", cycle_index=cycle_index),
             )
 
             api_client.emit_event(
@@ -152,6 +220,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "experiment_run_id": experiment_run_id,
                     "started_at": datetime.now(timezone.utc).isoformat(),
                 },
+                idempotency_key=_event_key(run_id, "experiment_run_started", cycle_index=cycle_index),
             )
 
             api_client.emit_event(
@@ -164,6 +233,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "experiment_run_id": experiment_run_id,
                     "tools": experiment.get("tools_required", []),
                 },
+                idempotency_key=_event_key(run_id, "tool_invocation_started", cycle_index=cycle_index),
             )
 
             execution_result = researcher.execute_experiment(run_id, experiment_run_id, experiment)
@@ -186,6 +256,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                 ActorType.TOOL,
                 "tool-runner",
                 tool_payload,
+                idempotency_key=_event_key(run_id, "tool_invocation_finished", cycle_index=cycle_index),
             )
 
             if execution_result["success"]:
@@ -201,9 +272,10 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                         "logs": execution_result["logs"],
                         "ended_at": datetime.now(timezone.utc).isoformat(),
                     },
+                    idempotency_key=_event_key(run_id, "experiment_run_completed", cycle_index=cycle_index),
                 )
 
-                result_id = str(uuid4())
+                result_id = _stable_uuid(run_id, "result", cycle_index)
                 api_client.emit_event(
                     run_id,
                     "result_recorded",
@@ -218,6 +290,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                         "artifacts": {"primary": execution_result["artifact"]},
                         "summary": execution_result["summary"],
                     },
+                    idempotency_key=_event_key(run_id, "result_recorded", cycle_index=cycle_index),
                 )
             else:
                 api_client.emit_event(
@@ -230,13 +303,21 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                         "error": execution_result.get("error", "unknown execution failure"),
                         "ended_at": datetime.now(timezone.utc).isoformat(),
                     },
+                    idempotency_key=_event_key(run_id, "experiment_run_failed", cycle_index=cycle_index),
                 )
 
             history_scores = api_client.get_scores(run_id)
             score, critic_reasoning, critic_model_call = critic.evaluate(goal, experiment, execution_result, history_scores)
-            _emit_trace(run_id, critic.agent_id, critic_reasoning, "evaluate_experiment", "model_inference")
+            _emit_trace(
+                run_id,
+                critic.agent_id,
+                critic_reasoning,
+                "evaluate_experiment",
+                cycle_index=cycle_index,
+                tool_used="model_inference",
+            )
 
-            score_id = str(uuid4())
+            score_id = _stable_uuid(run_id, "score", cycle_index)
             api_client.emit_event(
                 run_id,
                 "experiment_evaluated",
@@ -248,6 +329,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "experiment_run_id": experiment_run_id,
                     **score,
                 },
+                idempotency_key=_event_key(run_id, "experiment_evaluated", cycle_index=cycle_index),
             )
 
             api_client.emit_event(
@@ -261,6 +343,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "goal_progress": score["goal_progress"],
                     "confidence": score["confidence"],
                 },
+                idempotency_key=_event_key(run_id, "goal_progress_updated", cycle_index=cycle_index),
             )
 
             recommendation_payload = {
@@ -277,6 +360,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                 ActorType.AGENT,
                 critic.agent_id,
                 recommendation_payload,
+                idempotency_key=_event_key(run_id, "direction_recommended", cycle_index=cycle_index),
             )
 
             api_client.emit_event(
@@ -290,6 +374,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "recommendation": score["recommendation"],
                     "goal_progress": score["goal_progress"],
                 },
+                idempotency_key=_event_key(run_id, "agent_cycle_finished", cycle_index=cycle_index),
             )
 
             if score["recommendation"] == "stop" and score["confidence"] >= settings.stop_confidence_threshold:
@@ -303,6 +388,7 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                         "ended_at": datetime.now(timezone.utc).isoformat(),
                         "reason": "critic_stop_recommendation",
                     },
+                    idempotency_key=_event_key(run_id, "research_run_completed", suffix="terminal"),
                 )
                 return {"ok": True, "message": f"Run {run_id} completed via critic recommendation"}
 
@@ -318,42 +404,44 @@ def _process(run_id: str, max_cycles: int | None = None) -> dict[str, Any]:
                     "ended_at": datetime.now(timezone.utc).isoformat(),
                     "reason": "max_cycles_reached",
                 },
+                idempotency_key=_event_key(run_id, "research_run_completed", suffix="terminal"),
             )
 
         return {"ok": True, "message": f"Run {run_id} finished"}
 
     except Exception as exc:
-        job = get_current_job()
-        retries_left = 0
-        if job and job.retries_left:
-            retries_left = int(job.retries_left)
-
-        if retries_left > 0:
-            api_client.emit_event(
+        retries = 0
+        max_retries = settings.dramatiq_max_retries
+        if CurrentMessage is not None:
+            msg = CurrentMessage.get_current_message()
+            if msg is not None:
+                retries = int(msg.options.get("retries", 0))
+                max_retries = int(msg.options.get("max_retries", settings.dramatiq_max_retries))
+        attempts_used = retries + 1
+        retries_left = max(0, max_retries - attempts_used)
+        api_client.emit_event(
+            run_id,
+            "analysis_generated",
+            ActorType.SYSTEM,
+            "runtime",
+            {
+                "trace_id": _stable_uuid(run_id, "trace", "runtime", "dramatiq_retry", attempts_used),
+                "research_run_id": run_id,
+                "agent_id": "runtime",
+                "reasoning_summary": (
+                    f"Transient failure under Dramatiq: {exc}. "
+                    f"Attempts used: {attempts_used}/{max_retries}"
+                ),
+                "action": "retry_scheduled" if retries_left > 0 else "retry_exhausted_pending_callback",
+                "tool_used": None,
+                "tokens_used": 0,
+            },
+            idempotency_key=_event_key(
                 run_id,
                 "analysis_generated",
-                ActorType.SYSTEM,
-                "runtime",
-                {
-                    "trace_id": str(uuid4()),
-                    "research_run_id": run_id,
-                    "agent_id": "runtime",
-                    "reasoning_summary": f"Transient failure: {exc}. Retries remaining: {retries_left}",
-                    "action": "retry_scheduled",
-                    "tool_used": None,
-                    "tokens_used": 0,
-                },
-            )
-        else:
-            api_client.emit_event(
-                run_id,
-                "research_run_failed",
-                ActorType.SYSTEM,
-                "runtime",
-                {
-                    "run_id": run_id,
-                    "reason": str(exc),
-                    "ended_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
+                suffix=f"runtime:dramatiq_retry:{attempts_used}",
+            ),
+        )
         raise
+    finally:
+        run_lock.release()

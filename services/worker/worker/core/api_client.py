@@ -40,6 +40,7 @@ class APIClient:
         *,
         correlation_id: str | None = None,
         causation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         env = EventEnvelope(
             stream_id=run_id,
@@ -49,7 +50,7 @@ class APIClient:
             occurred_at=datetime.now(timezone.utc),
             correlation_id=correlation_id,
             causation_id=causation_id,
-            idempotency_key=f"{event_type}-{actor_id}-{uuid4()}",
+            idempotency_key=idempotency_key or f"{event_type}-{actor_id}-{uuid4()}",
             payload=payload,
         )
 
