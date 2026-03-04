@@ -127,3 +127,53 @@ class ModelResponse(BaseModel):
     latency_ms: int
     provider_request_id: str | None = None
     raw_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GoalState(BaseModel):
+    title: str
+    description: str
+    status: str = "active"
+
+
+class AgentState(BaseModel):
+    role: str = "unknown"
+    capabilities: list[str] = Field(default_factory=list)
+    tool_access: list[str] = Field(default_factory=list)
+
+
+class ExperimentState(BaseModel):
+    hypothesis: str
+    method: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    evaluation_method: str = ""
+    status: str = "proposed"
+
+
+class ExperimentRunState(BaseModel):
+    experiment_id: str | None = None
+    status: str = "queued"
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    logs: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    result_summary: str | None = None
+    error: str | None = None
+
+
+class ResultState(BaseModel):
+    experiment_run_id: str
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+
+
+class WorldStateModel(BaseModel):
+    stream_id: str
+    goals: dict[str, GoalState] = Field(default_factory=dict)
+    agents: dict[str, AgentState] = Field(default_factory=dict)
+    experiments: dict[str, ExperimentState] = Field(default_factory=dict)
+    experiment_runs: dict[str, ExperimentRunState] = Field(default_factory=dict)
+    results: dict[str, ResultState] = Field(default_factory=dict)
+    scores: list[dict[str, Any]] = Field(default_factory=list)
+    recommendations: list[dict[str, Any]] = Field(default_factory=list)
+    resources: dict[str, Any] = Field(default_factory=dict)
+    last_updated: str

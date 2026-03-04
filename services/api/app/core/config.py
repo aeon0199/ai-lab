@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     snapshot_cadence: int = 500
     max_experiments_per_run: int = 100
     max_tool_runtime_seconds: int = 300
+    worker_retry_max: int = 3
+    worker_retry_intervals: str = "10,30,60"
+    sandbox_health_url: str | None = "http://sandbox:8010/health"
 
 
 settings = Settings()

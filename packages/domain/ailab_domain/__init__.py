@@ -8,6 +8,7 @@ from .models import (
     ModelRequest,
     ModelResponse,
     ResearchRun,
+    WorldStateModel,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "EvaluationScore",
     "ModelRequest",
     "ModelResponse",
+    "WorldStateModel",
 ]

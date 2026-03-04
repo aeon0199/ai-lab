@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db import models
 from app.reducers.world_state import reduce_events
 from app.services.projections import apply_projection_event
+from app.services.upcasters import upcast_event_payload
 
 
 class DuplicateEventError(Exception):
@@ -47,18 +48,24 @@ def append_event(
     if envelope.event_type not in EVENT_TYPES:
         raise InvalidEventTypeError(envelope.event_type)
 
+    schema_version, payload = upcast_event_payload(
+        envelope.event_type,
+        envelope.schema_version,
+        envelope.payload,
+    )
+
     row = models.EventModel(
         event_id=str(envelope.event_id),
         stream_id=str(envelope.stream_id),
         event_type=envelope.event_type,
-        schema_version=envelope.schema_version,
+        schema_version=schema_version,
         occurred_at=envelope.occurred_at,
         actor_type=envelope.actor_type.value,
         actor_id=envelope.actor_id,
         correlation_id=str(envelope.correlation_id) if envelope.correlation_id else None,
         causation_id=str(envelope.causation_id) if envelope.causation_id else None,
         idempotency_key=envelope.idempotency_key,
-        payload=envelope.payload,
+        payload=payload,
     )
 
     db.add(row)

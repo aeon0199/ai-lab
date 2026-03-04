@@ -7,8 +7,9 @@ from ailab_domain.events import ActorType, EventEnvelope
 from ailab_policy.registry import DEFAULT_TOOL_REGISTRY
 from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+import requests
 from redis import Redis
-from rq import Queue
+from rq import Queue, Worker
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.responses import Response
@@ -334,17 +335,50 @@ def health(db: Session = Depends(get_db)) -> HealthResponse:
     request_counter.labels(endpoint="health").inc()
     db_state = "ok"
     redis_state = "ok"
+    worker_state = "unknown"
+    sandbox_state = "unknown"
     try:
         db.execute(select(1))
     except Exception:
         db_state = "down"
 
     try:
-        Redis.from_url(settings.redis_url).ping()
+        redis_conn = Redis.from_url(settings.redis_url)
+        redis_conn.ping()
     except Exception:
         redis_state = "down"
+        redis_conn = None
 
-    return HealthResponse(status="ok" if db_state == "ok" and redis_state == "ok" else "degraded", db=db_state, redis=redis_state)
+    if redis_conn is not None:
+        try:
+            workers = Worker.all(connection=redis_conn)
+            worker_state = "ok" if workers else "down"
+        except Exception:
+            worker_state = "down"
+    else:
+        worker_state = "down"
+
+    if settings.sandbox_health_url:
+        try:
+            sandbox_res = requests.get(settings.sandbox_health_url, timeout=2)
+            if sandbox_res.status_code == 200:
+                payload = sandbox_res.json()
+                sandbox_state = payload.get("docker", "ok")
+            else:
+                sandbox_state = "down"
+        except Exception:
+            sandbox_state = "down"
+    else:
+        sandbox_state = "disabled"
+
+    overall = "ok" if all(v == "ok" for v in [db_state, redis_state, worker_state, sandbox_state]) else "degraded"
+    return HealthResponse(
+        status=overall,
+        db=db_state,
+        redis=redis_state,
+        worker=worker_state,
+        sandbox=sandbox_state,
+    )
 
 
 @api_router.get("/metrics")

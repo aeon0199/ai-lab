@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
-from random import Random
 from typing import Any
 
 from worker.tools.sandbox import SandboxToolRunner, ToolResult, create_artifact
+from worker.core.config import settings
 
 
 class ResearcherAgent:
@@ -14,50 +15,64 @@ class ResearcherAgent:
     tool_access = ["python_exec", "shell_exec", "web_fetch", "model_inference", "dataset_read"]
 
     def __init__(self, workspace_root: str) -> None:
-        self.runner = SandboxToolRunner(workspace_root=workspace_root)
-
-    def execute_experiment(self, run_id: str, experiment_run_id: str, experiment: dict[str, Any]) -> dict[str, Any]:
-        cycle = int(experiment.get("parameters", {}).get("cycle", 1))
-
-        probe_code = (
-            "import math\n"
-            f"x = {cycle}\n"
-            "score = 0.5 + (math.sin(x) + 1) / 4\n"
-            "print(f'probe_score={score:.4f}')\n"
+        self.runner = SandboxToolRunner(
+            workspace_root=workspace_root,
+            sandbox_api_url=settings.sandbox_api_url,
+            sandbox_required=settings.sandbox_required,
         )
 
-        python_result = self.runner.run("python_exec", {"code": probe_code})
+    def execute_experiment(self, run_id: str, experiment_run_id: str, experiment: dict[str, Any]) -> dict[str, Any]:
+        parameters = experiment.get("parameters", {})
+        cycle = int(parameters.get("cycle", 1))
+        python_code = parameters.get("python_code") or (
+            "import json\n"
+            f"cycle = {cycle}\n"
+            "print(json.dumps({\"quality\": 0.5 + (cycle * 0.02), \"goal_progress\": 0.45 + (cycle * 0.03), \"confidence\": 0.6}))\n"
+        )
+
+        python_result = self.runner.run("python_exec", {"code": python_code})
+        extracted_metrics = _extract_metrics_from_output(python_result.output)
 
         model_result: ToolResult = self.runner.run(
             "model_inference",
             {
                 "request": {
-                    "provider": "local",
-                    "model": "llama3.1",
+                    "provider": settings.researcher_provider,
+                    "model": settings.researcher_model,
                     "messages": [
                         {
                             "role": "user",
-                            "content": f"Summarize this experiment hypothesis in one sentence: {experiment['hypothesis']}",
+                            "content": (
+                                "Summarize the experiment outcome in one concise sentence. "
+                                f"Hypothesis: {experiment['hypothesis']}. Output: {python_result.output[:1200]}"
+                            ),
                         }
                     ],
-                    "temperature": 0.2,
-                    "max_tokens": 80,
+                    "temperature": settings.researcher_temperature,
+                    "max_tokens": settings.researcher_max_tokens,
                 }
             },
         )
 
-        rng = Random(cycle)
-        novelty = min(1.0, 0.2 + rng.random() * 0.7)
-        quality = 0.4 + rng.random() * 0.5
-        progress = (novelty * 0.5) + (quality * 0.5)
+        quality = _clamp(float(extracted_metrics.get("quality", extracted_metrics.get("experiment_quality", 0.5))))
+        goal_progress = _clamp(float(extracted_metrics.get("goal_progress", 0.5)))
+        confidence = _clamp(float(extracted_metrics.get("confidence", extracted_metrics.get("confidence_signal", 0.6))))
+
+        novelty = _estimate_novelty(experiment, python_result.output)
+        goal_progress_delta = round(goal_progress - 0.5, 4)
 
         metrics = {
-            "goal_progress_delta": round(progress - 0.5, 4),
+            "goal_progress_delta": goal_progress_delta,
+            "goal_progress": round(goal_progress, 4),
             "experiment_quality": round(quality, 4),
             "novelty": round(novelty, 4),
-            "confidence_signal": round(0.55 + rng.random() * 0.4, 4),
+            "confidence_signal": round(confidence, 4),
             "tool_success_rate": 1.0 if python_result.success and model_result.success else 0.5,
+            "raw_metric_count": len(extracted_metrics),
         }
+        for key, value in extracted_metrics.items():
+            if key not in metrics and isinstance(value, (int, float)):
+                metrics[key] = round(float(value), 6)
 
         summary = (
             f"Experiment finished at {datetime.now(timezone.utc).isoformat()}. "
@@ -79,3 +94,38 @@ class ResearcherAgent:
             "success": python_result.success and model_result.success,
             "error": python_result.error or model_result.error,
         }
+
+
+def _extract_metrics_from_output(output: str) -> dict[str, float]:
+    if not output:
+        return {}
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    # Look for JSON metrics from the last valid JSON object line.
+    for line in reversed(lines):
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        result: dict[str, float] = {}
+        for key, value in payload.items():
+            if isinstance(value, (int, float)):
+                result[key] = float(value)
+        if result:
+            return result
+    return {}
+
+
+def _clamp(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _estimate_novelty(experiment: dict[str, Any], python_output: str) -> float:
+    basis = f"{experiment.get('hypothesis', '')}|{experiment.get('method', '')}|{python_output[:500]}"
+    unique_chars = len(set(basis))
+    scaled = unique_chars / 80.0
+    return _clamp(scaled)

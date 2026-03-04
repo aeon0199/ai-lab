@@ -80,7 +80,15 @@ class AnthropicAdapter:
             return _FallbackAdapter("anthropic").generate(request)
 
         start = time.perf_counter()
-        prompt = "\n".join([f"{m.role}: {m.content}" for m in request.messages])
+        messages = []
+        for message in request.messages:
+            role = message.role if message.role in {"user", "assistant"} else "user"
+            messages.append(
+                {
+                    "role": role,
+                    "content": [{"type": "text", "text": message.content}],
+                }
+            )
         res = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -92,13 +100,18 @@ class AnthropicAdapter:
                 "model": request.model,
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature,
-                "messages": [{"role": "user", "content": prompt}],
+                **({"system": request.system} if request.system else {}),
+                "messages": messages,
             },
             timeout=request.timeout,
         )
         res.raise_for_status()
         data = res.json()
-        output_text = " ".join([chunk.get("text", "") for chunk in data.get("content", [])])
+        output_parts: list[str] = []
+        for chunk in data.get("content", []):
+            if chunk.get("type") == "text":
+                output_parts.append(chunk.get("text", ""))
+        output_text = " ".join(output_parts).strip()
         usage = data.get("usage", {})
         return ModelResponse(
             output=output_text,
