@@ -1,0 +1,12 @@
+{
+  "name": "ai-lab",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "desktop:dev": "npm run dev --workspace @ai-lab/desktop",
+    "desktop:build": "npm run build --workspace @ai-lab/desktop"
+  }
+}

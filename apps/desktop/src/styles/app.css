@@ -1,0 +1,359 @@
+:root {
+  --bg-0: #091215;
+  --bg-1: #0f1d21;
+  --bg-2: #172930;
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #f6f7f5;
+  --text-soft: #9db0aa;
+  --accent-a: #f97316;
+  --accent-b: #14b8a6;
+  --danger: #ef4444;
+  --radius: 14px;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  background: radial-gradient(1400px 900px at 14% -10%, rgba(249, 115, 22, 0.24), transparent 52%),
+    radial-gradient(1000px 700px at 100% 0%, rgba(20, 184, 166, 0.2), transparent 46%),
+    linear-gradient(180deg, #0c1518, #091215 58%);
+  color: var(--text);
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+}
+
+.side-nav {
+  border-right: 1px solid var(--line);
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(23, 41, 48, 0.7), rgba(9, 18, 21, 0.8));
+  backdrop-filter: blur(8px);
+}
+
+.brand-kicker {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--text-soft);
+}
+
+.brand h1 {
+  margin: 8px 0 20px;
+  font-size: 34px;
+  line-height: 1.1;
+}
+
+.tab-btn {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  transition: all 160ms ease;
+}
+
+.tab-btn:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-btn.active {
+  border-color: rgba(249, 115, 22, 0.55);
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.22), rgba(20, 184, 166, 0.16));
+}
+
+.connection-status {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+}
+
+.pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 100%;
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+}
+
+.pulse.online {
+  background: #22c55e;
+}
+
+.pulse.offline {
+  background: #ef4444;
+}
+
+.content {
+  padding: 24px;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.endpoint label {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+input,
+textarea,
+button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(23, 41, 48, 0.72);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+button {
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+
+button:hover {
+  border-color: rgba(20, 184, 166, 0.7);
+  transform: translateY(-1px);
+}
+
+.chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  display: inline-flex;
+  align-items: center;
+}
+
+.chip.strong {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.error-banner {
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.15);
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: linear-gradient(160deg, rgba(23, 41, 48, 0.82), rgba(9, 18, 21, 0.92));
+  box-shadow: var(--shadow);
+}
+
+.panel h2,
+.panel h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.span-1 {
+  grid-column: span 1;
+}
+
+.span-2 {
+  grid-column: span 2;
+}
+
+.span-3 {
+  grid-column: span 3;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.table {
+  display: grid;
+  gap: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.5fr 1fr 0.8fr;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.row.head {
+  background: rgba(20, 184, 166, 0.15);
+  font-weight: 700;
+}
+
+.row.selected {
+  border-color: rgba(249, 115, 22, 0.6);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.event-feed,
+.trace-list {
+  max-height: 330px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.event-item,
+.trace-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+pre {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 10px;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.empty,
+.soft {
+  color: var(--text-soft);
+}
+
+.mono {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tool-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.active-btn {
+  border-color: var(--accent-a);
+}
+
+.chart-shell {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side-nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .span-1,
+  .span-2,
+  .span-3 {
+    grid-column: span 1;
+  }
+
+  .tool-grid,
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,37 @@
+# Node
+node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+
+# Build / dist
+dist/
+build/
+coverage/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# Docker volumes/artifacts
+.data/
+artifacts/
+
+# Electron
+apps/desktop/dist/
+apps/desktop/dist-electron/

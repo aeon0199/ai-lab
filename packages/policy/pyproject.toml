@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ailab-policy"
+version = "0.1.0"
+description = "Tool policy schemas and defaults for AI Lab"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.8"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ailab_policy*"]
