@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from uuid import UUID
 
 from ailab_domain.events import ActorType, EventEnvelope
@@ -9,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 import requests
 from redis import Redis
-from rq import Queue, Worker
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.responses import Response
@@ -35,7 +35,7 @@ from app.schemas.api import (
     WorldStateResponse,
 )
 from app.services.commands import cancel_run, create_goal, create_research_run, pause_run, resume_run, start_run
-from app.services.event_store import append_event, rebuild_all_projections, rebuild_world_state
+from app.services.event_store import DuplicateEventError, append_event, rebuild_all_projections, rebuild_world_state
 from app.services.queue import enqueue_research_run
 from app.ws.manager import ws_manager
 
@@ -336,6 +336,7 @@ def health(db: Session = Depends(get_db)) -> HealthResponse:
     db_state = "ok"
     redis_state = "ok"
     worker_state = "unknown"
+    heartbeat_age: float | None = None
     sandbox_state = "unknown"
     try:
         db.execute(select(1))
@@ -351,10 +352,18 @@ def health(db: Session = Depends(get_db)) -> HealthResponse:
 
     if redis_conn is not None:
         try:
-            workers = Worker.all(connection=redis_conn)
-            worker_state = "ok" if workers else "down"
+            raw = redis_conn.get(settings.worker_heartbeat_key)
+            if raw is not None:
+                payload = json.loads(raw.decode("utf-8"))
+                heartbeat_ts = datetime.fromisoformat(payload["timestamp"])
+                now = datetime.now(timezone.utc)
+                heartbeat_age = max(0.0, (now - heartbeat_ts).total_seconds())
+                worker_state = "ok" if heartbeat_age <= settings.worker_heartbeat_ttl_seconds else "down"
+            else:
+                worker_state = "down"
         except Exception:
             worker_state = "down"
+            heartbeat_age = None
     else:
         worker_state = "down"
 
@@ -377,6 +386,8 @@ def health(db: Session = Depends(get_db)) -> HealthResponse:
         db=db_state,
         redis=redis_state,
         worker=worker_state,
+        queue_backend=settings.queue_backend,
+        worker_heartbeat_age_seconds=heartbeat_age,
         sandbox=sandbox_state,
     )
 
@@ -415,6 +426,8 @@ async def internal_append_event(event: dict, db: Session = Depends(get_db)) -> d
     try:
         envelope = EventEnvelope(**event)
         row = append_event(db, envelope)
+    except DuplicateEventError:
+        return {"ok": True, "duplicate": True}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

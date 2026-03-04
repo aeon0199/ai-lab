@@ -130,4 +130,6 @@ class HealthResponse(BaseModel):
     db: str
     redis: str
     worker: str
+    queue_backend: str | None = None
+    worker_heartbeat_age_seconds: float | None = None
     sandbox: str

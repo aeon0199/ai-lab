@@ -1,45 +1,69 @@
 from __future__ import annotations
 
-from redis import Redis
-from rq import Queue, Retry
+from dataclasses import dataclass
+
+from ailab_domain.queueing import (
+    ACTOR_PROCESS_RESEARCH_RUN,
+    ACTOR_PROCESS_SINGLE_CYCLE,
+    QUEUE_RESEARCH_RUNS,
+)
+from dramatiq import Message
+from dramatiq.brokers.redis import RedisBroker
 
 from app.core.config import settings
 
 
-_redis_conn = Redis.from_url(settings.redis_url)
-run_queue = Queue("research_runs", connection=_redis_conn, default_timeout=900)
+@dataclass
+class DramatiqTaskDispatcher:
+    broker: RedisBroker
+
+    @classmethod
+    def from_settings(cls) -> "DramatiqTaskDispatcher":
+        broker = RedisBroker(url=settings.redis_url, namespace=settings.dramatiq_namespace)
+        broker.declare_queue(QUEUE_RESEARCH_RUNS)
+        return cls(broker=broker)
+
+    def enqueue_research_run(self, run_id: str) -> str:
+        message = Message(
+            queue_name=QUEUE_RESEARCH_RUNS,
+            actor_name=ACTOR_PROCESS_RESEARCH_RUN,
+            args=(run_id,),
+            kwargs={},
+            options={
+                "max_retries": settings.dramatiq_max_retries,
+                "min_backoff": settings.dramatiq_min_backoff_ms,
+                "max_backoff": settings.dramatiq_max_backoff_ms,
+            },
+        )
+        enqueued = self.broker.enqueue(message)
+        return enqueued.message_id
+
+    def enqueue_single_cycle(self, run_id: str) -> str:
+        message = Message(
+            queue_name=QUEUE_RESEARCH_RUNS,
+            actor_name=ACTOR_PROCESS_SINGLE_CYCLE,
+            args=(run_id,),
+            kwargs={},
+            options={
+                "max_retries": settings.dramatiq_max_retries,
+                "min_backoff": settings.dramatiq_min_backoff_ms,
+                "max_backoff": settings.dramatiq_max_backoff_ms,
+            },
+        )
+        enqueued = self.broker.enqueue(message)
+        return enqueued.message_id
+
+
+def get_task_dispatcher() -> DramatiqTaskDispatcher:
+    return DramatiqTaskDispatcher.from_settings()
+
+
+_dispatcher = get_task_dispatcher()
 
 
 def enqueue_research_run(run_id: str) -> str:
-    job = run_queue.enqueue(
-        "worker.jobs.process_research_run",
-        run_id,
-        retry=Retry(max=settings.worker_retry_max, interval=_retry_intervals()),
-        job_timeout=1800,
-        failure_ttl=86400,
-    )
-    return job.id
+    return _dispatcher.enqueue_research_run(run_id)
 
 
 def enqueue_single_cycle(run_id: str) -> str:
-    job = run_queue.enqueue(
-        "worker.jobs.process_single_cycle",
-        run_id,
-        retry=Retry(max=settings.worker_retry_max, interval=_retry_intervals()),
-        job_timeout=900,
-        failure_ttl=86400,
-    )
-    return job.id
-
-
-def _retry_intervals() -> list[int]:
-    values = []
-    for part in settings.worker_retry_intervals.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            values.append(int(part))
-        except ValueError:
-            continue
-    return values or [10, 30, 60]
+    return _dispatcher.enqueue_single_cycle(run_id)

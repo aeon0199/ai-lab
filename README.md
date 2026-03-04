@@ -6,7 +6,7 @@ AI Lab is an event-sourced autonomous research environment with a local-first de
 
 - Desktop: Electron + React + TypeScript
 - API: FastAPI + SQLAlchemy + PostgreSQL
-- Worker: Redis-backed RQ workers
+- Worker: Dramatiq workers over Redis
 - Sandbox: FastAPI + ephemeral Docker tool execution
 - Storage: Event log as source of truth + projection tables
 - Deployment: Docker Compose (single VM/local)
