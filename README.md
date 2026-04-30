@@ -28,7 +28,6 @@ AI Lab is an event-sourced autonomous research environment with a local-first de
 ### 1) Start infra and services (API + worker + sandbox + Postgres + Redis)
 
 ```bash
-cd .
 docker compose -f infra/docker/docker-compose.yml up --build
 ```
 
@@ -45,7 +44,6 @@ npm run dev
 ### 3) Run tests
 
 ```bash
-cd .
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e packages/domain -e packages/policy -e services/api -e services/worker -e services/sandbox pytest
